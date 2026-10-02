@@ -1,7 +1,9 @@
 /* main_sdl.c - SDL2 front end: window, keyboard/controller, vsynced presentation.
  *   ./toxiccity --res res --save save [--scale 3] [--fps 60]
- * Keys: arrows = d-pad, Enter/Space/Z = fire, A or F1 = left soft key, S or F2 = right soft key,
- *       0-9 = number keys, [ = *, ] = #, Esc = quit.
+ * Keyboard: arrows, Enter/Space/Z = fire, A/F1 and S/F2 = soft keys,
+ *           0-9 = number keys, [ = *, ] = #, Esc = quit.
+ * Controller: D-pad left/right = 4/6; A/B/X = 2/8/5; LB/RB = 7/9;
+ *             LT/RT = *, Y = #, Start = 0.
  * Sony Ericsson K800i key codes: up -1, down -2, left -3, right -4, fire -5, soft keys -6 / -7. */
 #include "rt.h"
 #include <SDL2/SDL.h>
@@ -33,14 +35,14 @@ static int map_key(SDL_Keycode k) {
     }
 }
 
-/* Controller directions and A use the same MIDP key codes as the keyboard. */
+/* Map controller buttons to the game's numeric/star/hash key codes. */
 static SDL_GameController *controller;
-static uint8_t controller_sources[5]; /* up, down, left, right, fire */
-static const int controller_keys[5] = { -1, -2, -3, -4, -5 };
+static uint8_t controller_sources[10];
+static const int controller_keys[10] = { 52, 54, 50, 56, 53, 55, 57, 35, 48, 42 };
 static void controller_source(int key, uint8_t source, int pressed) {
     int i;
-    for (i = 0; i < 5 && controller_keys[i] != key; i++) {}
-    if (i == 5) return;
+    for (i = 0; i < 10 && controller_keys[i] != key; i++) {}
+    if (i == 10) return;
     uint8_t before = controller_sources[i];
     if (pressed) controller_sources[i] |= source;
     else controller_sources[i] &= (uint8_t)~source;
@@ -50,24 +52,25 @@ static void controller_source(int key, uint8_t source, int pressed) {
 static void controller_button(SDL_GameControllerButton b, int pressed) {
     int key = 0;
     switch (b) {
-    case SDL_CONTROLLER_BUTTON_DPAD_UP: key = -1; break;
-    case SDL_CONTROLLER_BUTTON_DPAD_DOWN: key = -2; break;
-    case SDL_CONTROLLER_BUTTON_DPAD_LEFT: key = -3; break;
-    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: key = -4; break;
-    case SDL_CONTROLLER_BUTTON_A: key = -5; break;
+    case SDL_CONTROLLER_BUTTON_DPAD_LEFT: key = 52; break; /* 4 */
+    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: key = 54; break; /* 6 */
+    case SDL_CONTROLLER_BUTTON_A: key = 50; break;          /* 2 */
+    case SDL_CONTROLLER_BUTTON_B: key = 56; break;          /* 8 */
+    case SDL_CONTROLLER_BUTTON_X: key = 53; break;          /* 5 */
+    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: key = 55; break;  /* 7 */
+    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: key = 57; break; /* 9 */
+    case SDL_CONTROLLER_BUTTON_Y: key = 35; break;          /* # */
+    case SDL_CONTROLLER_BUTTON_START: key = 48; break;      /* 0 */
     default: return;
     }
     controller_source(key, 1, pressed);
 }
 static void controller_axis(SDL_GameControllerAxis axis, int16_t value) {
-    const int deadzone = 12000;
-    if (axis == SDL_CONTROLLER_AXIS_LEFTX) {
-        controller_source(-3, 2, value < -deadzone);
-        controller_source(-4, 2, value > deadzone);
-    } else if (axis == SDL_CONTROLLER_AXIS_LEFTY) {
-        controller_source(-1, 2, value < -deadzone);
-        controller_source(-2, 2, value > deadzone);
-    }
+    const int threshold = 12000;
+    if (axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT)
+        controller_source(42, 1, value > threshold);  /* LT = * */
+    else if (axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT)
+        controller_source(42, 2, value > threshold);  /* RT = * */
 }
 
 int main(int argc, char **argv) {
@@ -126,7 +129,7 @@ int main(int argc, char **argv) {
                 controller = SDL_GameControllerOpen(e.cdevice.which);
             else if (e.type == SDL_CONTROLLERDEVICEREMOVED && controller &&
                      SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller)) == e.cdevice.which) {
-                for (int i = 0; i < 5; i++) if (controller_sources[i]) rt_key_event(0, controller_keys[i]);
+                for (int i = 0; i < 10; i++) if (controller_sources[i]) rt_key_event(0, controller_keys[i]);
                 memset(controller_sources, 0, sizeof controller_sources);
                 SDL_GameControllerClose(controller); controller = NULL;
             }

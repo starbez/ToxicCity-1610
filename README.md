@@ -86,6 +86,8 @@ texture guide and override log.
 
 ### Controls
 
+Keyboard:
+
 | Input | Action |
 | --- | --- |
 | Arrow keys | Directional movement |
@@ -95,8 +97,23 @@ texture guide and override log.
 | 0–9 | Number keys |
 | `[` / `]` | `*` / `#` |
 | Esc | Quit |
-| Controller D-pad / left stick | Directional movement |
-| Controller A | Fire / confirm |
+
+Xbox controller:
+
+| Toxic City key | Xbox controller | Action |
+| --- | --- | --- |
+| **4** | **D-pad Left** | Move left |
+| **6** | **D-pad Right** | Move right |
+| **2** | **A** | Jump / climb up |
+| **8** | **B** | Crouch / climb down |
+| **5** | **X** | Attack |
+| **7** | **LB** | Web attack left |
+| **9** | **RB** | Web attack right |
+| **\*** | **LT / RT** | Block / web shield |
+| **#** | **Y** | Special / context action |
+| **0** | **Start / Menu** | Pause |
+
+LT and RT both trigger `*`; the key stays held until both triggers are released.
 
 ## Developer tools
 
