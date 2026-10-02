@@ -35,10 +35,61 @@ static int map_key(SDL_Keycode k) {
     }
 }
 
-/* Map controller buttons to the game's numeric/star/hash key codes. */
+/* Xbox layout -> game keypad (ASCII): D-pad L/R=4/6, A/B/X=2/8/5,
+ * LB/RB=7/9, LT/RT=*, Y=#, Start=0. */
+typedef struct { SDL_GameControllerButton button; int key; } PadMap;
+static const PadMap pad_map[] = {
+    { SDL_CONTROLLER_BUTTON_DPAD_LEFT, '4' },
+    { SDL_CONTROLLER_BUTTON_DPAD_RIGHT, '6' },
+    { SDL_CONTROLLER_BUTTON_A, '2' },
+    { SDL_CONTROLLER_BUTTON_B, '8' },
+    { SDL_CONTROLLER_BUTTON_X, '5' },
+    { SDL_CONTROLLER_BUTTON_LEFTSHOULDER, '7' },
+    { SDL_CONTROLLER_BUTTON_RIGHTSHOULDER, '9' },
+    { SDL_CONTROLLER_BUTTON_Y, '#' },
+    { SDL_CONTROLLER_BUTTON_START, '0' },
+};
+#define PAD_MAP_N ((int)(sizeof pad_map / sizeof pad_map[0]))
+enum { SRC_BUTTON = 1, SRC_LT = 2, SRC_RT = 4 };
+
 static SDL_GameController *controller;
+static SDL_JoystickID controller_id = -1;
+static const int controller_keys[10] = { '4', '6', '2', '8', '5', '7', '9', '#', '0', '*' };
 static uint8_t controller_sources[10];
-static const int controller_keys[10] = { 52, 54, 50, 56, 53, 55, 57, 35, 48, 42 };
+static char controller_name[80] = "none detected";
+static int controller_last_key, controller_last_down;
+static int lt_down, rt_down;
+static const char *controller_key_name(int key) {
+    static char label[2]; label[0] = (char)key; label[1] = 0; return label;
+}
+static void controller_set_name(SDL_GameController *pad) {
+    const char *name = pad ? SDL_GameControllerName(pad) : NULL;
+    snprintf(controller_name, sizeof controller_name, "%s", name ? name : "none detected");
+}
+static void controller_release_all(void) {
+    for (int i = 0; i < 10; i++) if (controller_sources[i]) rt_key_event(0, controller_keys[i]);
+    memset(controller_sources, 0, sizeof controller_sources);
+    lt_down = rt_down = 0;
+}
+static void controller_close(void) {
+    controller_release_all();
+    if (controller) SDL_GameControllerClose(controller);
+    controller = NULL; controller_id = -1;
+    controller_set_name(NULL);
+}
+static void controller_open_first(void) {
+    if (controller) return;
+    for (int i = 0; i < SDL_NumJoysticks(); i++) {
+        if (!SDL_IsGameController(i)) continue;
+        controller = SDL_GameControllerOpen(i);
+        if (controller) {
+            controller_id = SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller));
+            controller_set_name(controller);
+            return;
+        }
+    }
+}
+/* Merge physical inputs that share a virtual key: LT and RT both map to '*'. */
 static void controller_source(int key, uint8_t source, int pressed) {
     int i;
     for (i = 0; i < 10 && controller_keys[i] != key; i++) {}
@@ -46,31 +97,25 @@ static void controller_source(int key, uint8_t source, int pressed) {
     uint8_t before = controller_sources[i];
     if (pressed) controller_sources[i] |= source;
     else controller_sources[i] &= (uint8_t)~source;
-    if (!before && controller_sources[i]) rt_key_event(1, key);
-    else if (before && !controller_sources[i]) rt_key_event(0, key);
+    if (!before && controller_sources[i]) {
+        controller_last_key = key; controller_last_down = 1; rt_key_event(1, key);
+    } else if (before && !controller_sources[i]) {
+        controller_last_key = key; controller_last_down = 0; rt_key_event(0, key);
+    }
 }
 static void controller_button(SDL_GameControllerButton b, int pressed) {
-    int key = 0;
-    switch (b) {
-    case SDL_CONTROLLER_BUTTON_DPAD_LEFT: key = 52; break; /* 4 */
-    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: key = 54; break; /* 6 */
-    case SDL_CONTROLLER_BUTTON_A: key = 50; break;          /* 2 */
-    case SDL_CONTROLLER_BUTTON_B: key = 56; break;          /* 8 */
-    case SDL_CONTROLLER_BUTTON_X: key = 53; break;          /* 5 */
-    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: key = 55; break;  /* 7 */
-    case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: key = 57; break; /* 9 */
-    case SDL_CONTROLLER_BUTTON_Y: key = 35; break;          /* # */
-    case SDL_CONTROLLER_BUTTON_START: key = 48; break;      /* 0 */
-    default: return;
-    }
-    controller_source(key, 1, pressed);
+    for (int i = 0; i < PAD_MAP_N; i++)
+        if (pad_map[i].button == b) { controller_source(pad_map[i].key, SRC_BUTTON, pressed); return; }
 }
 static void controller_axis(SDL_GameControllerAxis axis, int16_t value) {
-    const int threshold = 12000;
-    if (axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT)
-        controller_source(42, 1, value > threshold);  /* LT = * */
-    else if (axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT)
-        controller_source(42, 2, value > threshold);  /* RT = * */
+    const int press = 16000, release = 8000; /* hysteresis avoids flicker at the trigger threshold */
+    if (axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT) {
+        if (!lt_down && value > press) { lt_down = 1; controller_source('*', SRC_LT, 1); }
+        else if (lt_down && value < release) { lt_down = 0; controller_source('*', SRC_LT, 0); }
+    } else if (axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
+        if (!rt_down && value > press) { rt_down = 1; controller_source('*', SRC_RT, 1); }
+        else if (rt_down && value < release) { rt_down = 0; controller_source('*', SRC_RT, 0); }
+    }
 }
 
 int main(int argc, char **argv) {
@@ -89,9 +134,8 @@ int main(int argc, char **argv) {
     timeBeginPeriod(1); /* keep the Java repaint thread's short sleeps near 1 ms precision */
 #endif
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) { fprintf(stderr, "SDL_Init: %s\n", SDL_GetError()); return 1; }
-    for (int i = 0; i < SDL_NumJoysticks(); i++) {
-        if (SDL_IsGameController(i)) { controller = SDL_GameControllerOpen(i); if (controller) break; }
-    }
+    SDL_GameControllerEventState(SDL_ENABLE);
+    controller_open_first();
     int win_w = wide ? 1280 : RT_SCREEN_W * scale;
     int win_h = wide ? 720 : RT_SCREEN_H * scale;
     Uint32 win_flags = SDL_WINDOW_SHOWN | (wide ? SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED : 0);
@@ -125,17 +169,17 @@ int main(int argc, char **argv) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = 0;
-            else if (e.type == SDL_CONTROLLERDEVICEADDED && !controller && SDL_IsGameController(e.cdevice.which))
-                controller = SDL_GameControllerOpen(e.cdevice.which);
-            else if (e.type == SDL_CONTROLLERDEVICEREMOVED && controller &&
-                     SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(controller)) == e.cdevice.which) {
-                for (int i = 0; i < 10; i++) if (controller_sources[i]) rt_key_event(0, controller_keys[i]);
-                memset(controller_sources, 0, sizeof controller_sources);
-                SDL_GameControllerClose(controller); controller = NULL;
+            else if (e.type == SDL_CONTROLLERDEVICEADDED) {
+                controller_open_first();
             }
-            else if (e.type == SDL_CONTROLLERBUTTONDOWN || e.type == SDL_CONTROLLERBUTTONUP)
+            else if (e.type == SDL_CONTROLLERDEVICEREMOVED && e.cdevice.which == controller_id) {
+                controller_close();
+                controller_open_first();
+            }
+            else if ((e.type == SDL_CONTROLLERBUTTONDOWN || e.type == SDL_CONTROLLERBUTTONUP) &&
+                     e.cbutton.which == controller_id)
                 controller_button((SDL_GameControllerButton)e.cbutton.button, e.type == SDL_CONTROLLERBUTTONDOWN);
-            else if (e.type == SDL_CONTROLLERAXISMOTION)
+            else if (e.type == SDL_CONTROLLERAXISMOTION && e.caxis.which == controller_id)
                 controller_axis((SDL_GameControllerAxis)e.caxis.axis, e.caxis.value);
             else if ((e.type == SDL_KEYDOWN || e.type == SDL_KEYUP) && !e.key.repeat) {
                 if (e.key.keysym.sym == SDLK_ESCAPE) running = 0;
@@ -170,9 +214,14 @@ int main(int argc, char **argv) {
                 if (compensation > desired_ms - 1.0) compensation = desired_ms - 1.0;
                 rt_sleep_set_compensation((int32_t)(compensation + 0.5));
             }
-            char title[192];
-            snprintf(title, sizeof title, "Spider-Man: Toxic City | Paint %.1f FPS | Display %.1f FPS | %.2f ms/frame | Target %d | Sleep trim %dms",
-                     paint_fps, present_fps, 1000.0 / present_fps, fps, rt_sleep_get_compensation());
+            char title[320];
+            if (controller_last_key)
+                snprintf(title, sizeof title, "Spider-Man: Toxic City | Pad %s | Last key %s %s | Paint %.1f FPS | Display %.1f FPS | %.2f ms/frame | Target %d | Sleep trim %dms",
+                         controller_name, controller_key_name(controller_last_key), controller_last_down ? "down" : "up",
+                         paint_fps, present_fps, 1000.0 / present_fps, fps, rt_sleep_get_compensation());
+            else
+                snprintf(title, sizeof title, "Spider-Man: Toxic City | Pad %s | No pad input yet | Paint %.1f FPS | Display %.1f FPS | %.2f ms/frame | Target %d | Sleep trim %dms",
+                         controller_name, paint_fps, present_fps, 1000.0 / present_fps, fps, rt_sleep_get_compensation());
             SDL_SetWindowTitle(win, title);
             perf_start = now; presented = 0; last_painted = painted;
         }
@@ -184,7 +233,7 @@ int main(int argc, char **argv) {
             if (ms) SDL_Delay(ms);
         } else if (now - next_frame > frame_period) next_frame = now;
     }
-    if (controller) SDL_GameControllerClose(controller);
+    controller_close();
     SDL_Quit();
 #ifdef _WIN32
     timeEndPeriod(1);
