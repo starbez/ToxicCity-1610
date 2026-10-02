@@ -5,9 +5,14 @@ MIDLET   ?= GloftSPDN
 CC       ?= gcc
 SDL_SYS_LIBS =
 ifeq ($(OS),Windows_NT)
+SDL_CFLAGS ?= -I/ucrt64/include
+SDL_LIBS ?= -lmingw32 -lSDL2main -lSDL2
 SDL_SYS_LIBS += -lwinmm
+else
+SDL_CFLAGS ?= $(shell sdl2-config --cflags)
+SDL_LIBS ?= $(shell sdl2-config --libs)
 endif
-CFLAGS   ?= -std=gnu11 -O1 -g -Iinclude -Igen -Iruntime -Wall -Wno-unused-label -Wno-unused-variable \
+CFLAGS   ?= -std=gnu11 -O2 -g -Iinclude -Igen -Iruntime -Wall -Wno-unused-label -Wno-unused-variable \
             -Wno-unused-but-set-variable -Wno-clobbered
 GEN_SRC   = $(wildcard gen/*.c)
 RT_SRC    = $(filter-out runtime/main_headless.c runtime/main_sdl.c,$(wildcard runtime/*.c))
@@ -40,7 +45,7 @@ headless: gen res
 # Playable build (Linux: libsdl2-dev; Windows: MSYS2 UCRT64 GCC + SDL2):
 #   make sdl JAR=... && ./toxiccity --res res --save save --scale 3
 sdl: gen res
-	$(CC) $(CFLAGS) -pthread $(shell sdl2-config --cflags) $(GEN_SRC) $(RT_SRC) runtime/main_sdl.c -lm $(shell sdl2-config --libs) $(SDL_SYS_LIBS) -o toxiccity
+	$(CC) $(CFLAGS) -pthread $(SDL_CFLAGS) $(GEN_SRC) $(RT_SRC) runtime/main_sdl.c -lm $(SDL_LIBS) $(SDL_SYS_LIBS) -o toxiccity
 
 test:
 	python3 tests/synth_test.py
