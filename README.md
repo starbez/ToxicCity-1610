@@ -20,8 +20,9 @@ exports, and executables are local build/runtime files ignored by Git.
 - **Frame pacing and metrics:** selectable frame-rate target up to 60 FPS. The
   window title shows paint FPS, display FPS, frame time, target FPS, and sleep
   adjustment. Actual rates depend on the device and game workload.
-- **Xbox-style controller input:** D-pad and left stick move; A acts as fire.
-  SDL-compatible game controllers can be connected while the game is running.
+- **Controller input:** D-pad and left stick both send directional arrows. The
+  Xbox button-to-keypad layout is listed in the controls table below, with
+  controller hot-plug support and device-specific input filtering.
 - **Texture export and replacement:** exports decoded images as numbered and
   stable-hash PNGs, and can load edited PNG overrides. See
   [Texture workflow](TEXTURES.md).
@@ -100,10 +101,9 @@ Keyboard:
 
 Xbox controller:
 
-| Toxic City key | Xbox controller | Action |
+| Toxic City input | Xbox controller | Action |
 | --- | --- | --- |
-| **4** | **D-pad Left** | Move left |
-| **6** | **D-pad Right** | Move right |
+| Arrow keys | D-pad and left stick | Move in that direction |
 | **2** | **A** | Jump / climb up |
 | **8** | **B** | Crouch / climb down |
 | **5** | **X** | Attack |

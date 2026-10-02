@@ -2,7 +2,7 @@
  *   ./toxiccity --res res --save save [--scale 3] [--fps 60]
  * Keyboard: arrows, Enter/Space/Z = fire, A/F1 and S/F2 = soft keys,
  *           0-9 = number keys, [ = *, ] = #, Esc = quit.
- * Controller: D-pad left/right = 4/6; A/B/X = 2/8/5; LB/RB = 7/9;
+ * Controller: D-pad and left stick = arrows; A/B/X = 2/8/5; LB/RB = 7/9;
  *             LT/RT = *, Y = #, Start = 0.
  * Sony Ericsson K800i key codes: up -1, down -2, left -3, right -4, fire -5, soft keys -6 / -7. */
 #include "rt.h"
@@ -35,12 +35,14 @@ static int map_key(SDL_Keycode k) {
     }
 }
 
-/* Xbox layout -> game keypad (ASCII): D-pad L/R=4/6, A/B/X=2/8/5,
+/* Xbox layout -> game input: D-pad and left stick send arrows; A/B/X=2/8/5,
  * LB/RB=7/9, LT/RT=*, Y=#, Start=0. */
 typedef struct { SDL_GameControllerButton button; int key; } PadMap;
 static const PadMap pad_map[] = {
-    { SDL_CONTROLLER_BUTTON_DPAD_LEFT, '4' },
-    { SDL_CONTROLLER_BUTTON_DPAD_RIGHT, '6' },
+    { SDL_CONTROLLER_BUTTON_DPAD_UP, -1 },
+    { SDL_CONTROLLER_BUTTON_DPAD_DOWN, -2 },
+    { SDL_CONTROLLER_BUTTON_DPAD_LEFT, -3 },
+    { SDL_CONTROLLER_BUTTON_DPAD_RIGHT, -4 },
     { SDL_CONTROLLER_BUTTON_A, '2' },
     { SDL_CONTROLLER_BUTTON_B, '8' },
     { SDL_CONTROLLER_BUTTON_X, '5' },
@@ -50,26 +52,31 @@ static const PadMap pad_map[] = {
     { SDL_CONTROLLER_BUTTON_START, '0' },
 };
 #define PAD_MAP_N ((int)(sizeof pad_map / sizeof pad_map[0]))
-enum { SRC_BUTTON = 1, SRC_LT = 2, SRC_RT = 4 };
+enum { SRC_BUTTON = 1, SRC_STICK = 2, SRC_LT = 4, SRC_RT = 8 };
 
 static SDL_GameController *controller;
 static SDL_JoystickID controller_id = -1;
-static const int controller_keys[10] = { '4', '6', '2', '8', '5', '7', '9', '#', '0', '*' };
-static uint8_t controller_sources[10];
+static const int controller_keys[12] = { -1, -2, -3, -4, '2', '8', '5', '7', '9', '#', '0', '*' };
+static uint8_t controller_sources[12];
 static char controller_name[80] = "none detected";
 static int controller_last_key, controller_last_down;
 static int lt_down, rt_down;
+static int stick_up, stick_down, stick_left, stick_right;
 static const char *controller_key_name(int key) {
-    static char label[2]; label[0] = (char)key; label[1] = 0; return label;
+    switch (key) {
+    case -1: return "UP"; case -2: return "DOWN"; case -3: return "LEFT"; case -4: return "RIGHT";
+    default: { static char label[2]; label[0] = (char)key; label[1] = 0; return label; }
+    }
 }
 static void controller_set_name(SDL_GameController *pad) {
     const char *name = pad ? SDL_GameControllerName(pad) : NULL;
     snprintf(controller_name, sizeof controller_name, "%s", name ? name : "none detected");
 }
 static void controller_release_all(void) {
-    for (int i = 0; i < 10; i++) if (controller_sources[i]) rt_key_event(0, controller_keys[i]);
+    for (int i = 0; i < 12; i++) if (controller_sources[i]) rt_key_event(0, controller_keys[i]);
     memset(controller_sources, 0, sizeof controller_sources);
     lt_down = rt_down = 0;
+    stick_up = stick_down = stick_left = stick_right = 0;
 }
 static void controller_close(void) {
     controller_release_all();
@@ -92,8 +99,8 @@ static void controller_open_first(void) {
 /* Merge physical inputs that share a virtual key: LT and RT both map to '*'. */
 static void controller_source(int key, uint8_t source, int pressed) {
     int i;
-    for (i = 0; i < 10 && controller_keys[i] != key; i++) {}
-    if (i == 10) return;
+    for (i = 0; i < 12 && controller_keys[i] != key; i++) {}
+    if (i == 12) return;
     uint8_t before = controller_sources[i];
     if (pressed) controller_sources[i] |= source;
     else controller_sources[i] &= (uint8_t)~source;
@@ -109,7 +116,17 @@ static void controller_button(SDL_GameControllerButton b, int pressed) {
 }
 static void controller_axis(SDL_GameControllerAxis axis, int16_t value) {
     const int press = 16000, release = 8000; /* hysteresis avoids flicker at the trigger threshold */
-    if (axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT) {
+    if (axis == SDL_CONTROLLER_AXIS_LEFTX) {
+        if (!stick_left && value < -press) { stick_left = 1; controller_source(-3, SRC_STICK, 1); }
+        else if (stick_left && value > -release) { stick_left = 0; controller_source(-3, SRC_STICK, 0); }
+        if (!stick_right && value > press) { stick_right = 1; controller_source(-4, SRC_STICK, 1); }
+        else if (stick_right && value < release) { stick_right = 0; controller_source(-4, SRC_STICK, 0); }
+    } else if (axis == SDL_CONTROLLER_AXIS_LEFTY) {
+        if (!stick_up && value < -press) { stick_up = 1; controller_source(-1, SRC_STICK, 1); }
+        else if (stick_up && value > -release) { stick_up = 0; controller_source(-1, SRC_STICK, 0); }
+        if (!stick_down && value > press) { stick_down = 1; controller_source(-2, SRC_STICK, 1); }
+        else if (stick_down && value < release) { stick_down = 0; controller_source(-2, SRC_STICK, 0); }
+    } else if (axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT) {
         if (!lt_down && value > press) { lt_down = 1; controller_source('*', SRC_LT, 1); }
         else if (lt_down && value < release) { lt_down = 0; controller_source('*', SRC_LT, 0); }
     } else if (axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
