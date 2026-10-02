@@ -1,36 +1,76 @@
-# Spider-Man: Toxic City J2ME Recompilation
+# Spider-Man: Toxic City — J2ME Recompilation
 
-This project translates Java ME bytecode to C and provides a native SDL2 runtime
-for the 240×320 Gameloft game. The game JAR and its assets are not included.
-Supply your own legally obtained JAR; generated game code, extracted resources,
-saves, texture dumps, and compiled binaries stay local and are excluded from Git.
+A static Java ME bytecode-to-C translator and SDL2 runtime for the 240×320
+Gameloft game. The translator generates C from a locally supplied game JAR; the
+runtime provides desktop input, graphics, audio, saves, and optional texture
+tools.
+
+**The game JAR and game assets are not included.** Provide your own legally
+obtained compatible JAR. Generated game C, extracted resources, saves, texture
+exports, and executables are local build/runtime files ignored by Git.
+
+## Features
+
+- **JAR-to-C translation:** translates Java class files into C, then builds
+  them with the native runtime.
+- **SDL2 desktop runtime:** 240×320 framebuffer, integer-scaled window,
+  keyboard input, controller hot-plug, and SDL audio output.
+- **Widescreen mode:** maximizes a 16:9 window and centers the portrait game
+  image with side bars. It does not widen the camera or change the play area.
+- **Frame pacing and metrics:** selectable frame-rate target up to 60 FPS. The
+  window title shows paint FPS, display FPS, frame time, target FPS, and sleep
+  adjustment. Actual rates depend on the device and game workload.
+- **Xbox-style controller input:** D-pad and left stick move; A acts as fire.
+  SDL-compatible game controllers can be connected while the game is running.
+- **Texture export and replacement:** exports decoded images as numbered and
+  stable-hash PNGs, and can load edited PNG overrides. See
+  [Texture workflow](TEXTURES.md).
+- **Java ME runtime services:** MIDlet startup, resources, RMS saves, core
+  collections and strings, threads, image/graphics APIs, and a software audio
+  player with WAV playback and an SMF synthesizer.
+- **Headless mode:** render timed screenshots and optionally record WAV audio
+  or inject scripted key events.
+
+### Texture resolution note
+
+Texture overrides can change the art, but they do not currently provide true
+high-resolution in-game rendering. Matching-size images are supported, as are
+integer 2×–4× PNGs with the same aspect ratio; enlarged images are downsampled to
+the original texture dimensions. The game still draws in its original 240×320
+coordinate space, including its sprite-sheet crops.
 
 ## Requirements
 
 - Python 3
 - GCC and Make
-- SDL2 development libraries (`sdl2-config` must be available)
-- A compatible 240×320 game JAR (set `MIDLET` if its entry class differs from
-  `GloftSPDN`)
+- SDL2 development libraries with `sdl2-config` on `PATH`
+- A compatible 240×320 game JAR; the default MIDlet entry class is `GloftSPDN`
 
-On Windows, build from an MSYS2 UCRT64 shell with GCC, Make, Python, and SDL2
-installed in that environment. Keep `SDL2.dll` on `PATH` when launching the
-result. The included launcher also checks the common MSYS2 UCRT64 and MinGW64
-directories.
+For Windows, use an MSYS2 UCRT64 shell with GCC, Make, Python, and SDL2 installed
+in that environment. Keep `SDL2.dll` on `PATH` when launching; the Windows
+launcher also checks common MSYS2 UCRT64 and MinGW64 folders.
 
 ## Build
 
-Put your JAR in the project folder (the default name is `game.jar`), then run:
+Place your JAR in the project folder as `game.jar`, or pass its path with
+`JAR=...`:
 
 ```sh
-make gen JAR=game.jar       # translate the JAR to C under gen/
-make check JAR=game.jar     # compile-check generated C
-make res JAR=game.jar       # extract resources under res/
-make sdl JAR=game.jar       # build the SDL2 game executable
+make gen JAR=game.jar       # translate the JAR into C files under gen/
+make check JAR=game.jar     # compile-check the generated C
+make res JAR=game.jar       # extract game resources under res/
+make sdl JAR=game.jar       # build the SDL2 desktop executable
 ```
 
-On Windows, `make sdl` links the Windows multimedia timer library as well. The
-generated files and executable are ignored by Git and can be recreated locally.
+If the JAR uses a different MIDlet class, set `MIDLET`, for example:
+
+```sh
+make gen JAR=game.jar MIDLET=YourMidletClass
+```
+
+The Windows build links the multimedia timer library used for finer sleep
+timing. Generated files and binaries can be recreated locally and are excluded
+from the repository.
 
 ## Run
 
@@ -39,42 +79,51 @@ generated files and executable are ignored by Git and can be recreated locally.
 ./toxiccity --res res --save save --fps 60 --wide
 ```
 
-On Windows, double-click `Launch Toxic City.bat` to open the settings launcher.
-It configures window scale, FPS target, widescreen mode, resource/save folders,
-and optional texture export/overrides. Widescreen mode maximizes the window and
-centers the original portrait game image with side bars; it does not change the
-game's camera or 240×320 play area. The game window title reports painted FPS,
-display FPS, frame time, selected target, and pacing adjustment.
+The Windows GUI launcher is `Launch Toxic City.bat`. It lets you choose the
+executable, resources and save folders, scale, FPS target, widescreen mode,
+texture export folder, and texture override folder. It also links to the
+texture guide and override log.
 
-Controls: arrows, Enter/Space/Z = fire, A/F1 = left soft key, S/F2 = right soft
-key, 0–9, `[` = `*`, `]` = `#`, Esc = quit. SDL GameController devices are
-supported.
+### Controls
 
-Texture extraction and replacement steps are in [TEXTURES.md](TEXTURES.md).
+| Input | Action |
+| --- | --- |
+| Arrow keys | Directional movement |
+| Enter, Space, Z | Fire / confirm |
+| A or F1 | Left soft key |
+| S or F2 | Right soft key |
+| 0–9 | Number keys |
+| `[` / `]` | `*` / `#` |
+| Esc | Quit |
+| Controller D-pad / left stick | Directional movement |
+| Controller A | Fire / confirm |
 
-## Development
+## Developer tools
 
 ```sh
-make missing JAR=game.jar
-make headless JAR=game.jar
-make test
+make missing JAR=game.jar  # report unresolved runtime symbols
+make headless JAR=game.jar # build and capture timed screenshots
+make test                  # run the offline synthesizer check
 ```
 
-The headless target writes PNG screenshots; `--wav out.wav` records audio and
-`--script "9000:-5;11000:-2"` injects key events (milliseconds:keycode).
+The headless executable accepts `--wav out.wav` to record audio and
+`--script "9000:-5;11000:-2"` to inject key events (`milliseconds:keycode`).
+Screenshots are written to the selected `--shot-dir` at `--shot-ms` intervals.
 
-## Current limits
+## Known limitations
 
-- No garbage collector; allocated objects are not freed.
-- Synthesized instrument timbres approximate General MIDI and have not been
-  verified by ear against the original handset.
-- Soft-key codes, system-font rendering, and gameplay beyond the tested intro
-  still need verification.
-- Frame-by-frame comparison with J2ME Loader has not been completed.
+- Gameplay beyond the tested intro, soft-key behavior, and system-font text
+  rendering still need verification.
+- The software synthesizer uses approximate General MIDI timbres and has not
+  been verified by ear against the original handset.
+- There is no garbage collector yet; allocated objects are not freed.
+- Frame-by-frame comparison with J2ME Loader is still outstanding.
+- Raising the FPS target does not guarantee a higher game logic or paint rate;
+  the target is capped at 60 and performance depends on the workload.
 
-## License and game assets
+## License and original game material
 
-No project license is specified yet. Choose and add a license before accepting
-outside contributions or publishing the source under an open-source license.
-The original game JAR, generated translation, and extracted game assets are not
-provided by this repository.
+This repository does not yet specify a project-wide license. Third-party
+components retain their own notices in their source files. The original game
+JAR, generated game translation, and extracted game assets are not distributed
+here.
