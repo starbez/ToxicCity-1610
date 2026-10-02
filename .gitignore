@@ -1,0 +1,35 @@
+# Locally supplied proprietary game input and generated translation/assets
+*.jar
+*.jad
+/gen/
+/res/
+
+# Local runtime data and build outputs
+/save/
+/build/
+/shots/
+/toxiccity
+/toxiccity.exe
+/toxiccity_headless
+/toxiccity_headless.exe
+*.o
+*.obj
+*.dll
+*.wav
+
+# Texture exports, edits, logs, and scratch previews
+/textures_original/
+/textures_mod/
+/texture_override.log
+/texture-*.png
+/texture-preview.png
+
+# Python/editor cache
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
